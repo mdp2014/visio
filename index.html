@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visio Multi</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Visio Multi</h1>
+    <div id="controls">
+        <button id="toggle-mic">🎤 Micro OFF</button>
+        <button id="toggle-cam">📷 Caméra OFF</button>
+    </div>
+    <div id="video-grid"></div>
+
+    <!-- Son d'arrivée -->
+    <audio id="join-sound" preload="auto">
+        <source src="data:audio/wav;base64,UklGRmQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YVQAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==" type="audio/wav">
+    </audio>
+
+    <!-- PeerJS -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
