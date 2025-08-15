@@ -1,26 +1,176 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visio Multi</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Visio Multi</title>
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #121212;
+    color: white;
+    text-align: center;
+}
+h1 { margin: 10px 0; }
+#controls { margin: 10px; }
+#controls button {
+    margin: 0 5px; padding: 8px 12px;
+    font-size: 16px; border: none;
+    border-radius: 5px; cursor: pointer;
+}
+#video-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px; padding: 10px;
+}
+.video-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border: 3px solid #444;
+    border-radius: 10px;
+    padding: 5px;
+    transition: border-color 0.3s;
+}
+.video-container.speaking {
+    border-color: limegreen;
+}
+video {
+    width: 100%; height: auto;
+    background: black;
+    border-radius: 10px;
+    object-fit: cover;
+}
+.name-label {
+    margin-top: 5px;
+    font-size: 14px;
+    color: #ccc;
+}
+</style>
 </head>
 <body>
-    <h1>Visio Multi</h1>
-    <div id="controls">
-        <button id="toggle-mic">🎤 Micro OFF</button>
-        <button id="toggle-cam">📷 Caméra OFF</button>
-    </div>
-    <div id="video-grid"></div>
+<h1>Visio Multi</h1>
+<div id="controls">
+    <button id="toggle-mic">🎤 Micro OFF</button>
+    <button id="toggle-cam">📷 Caméra OFF</button>
+</div>
+<div id="video-grid"></div>
+<audio id="join-sound" preload="auto">
+    <source src="data:audio/wav;base64,UklGRmQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YVQAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==" type="audio/wav">
+</audio>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script>
+const videoGrid = document.getElementById('video-grid');
+const joinSound = document.getElementById('join-sound');
+const toggleMicBtn = document.getElementById('toggle-mic');
+const toggleCamBtn = document.getElementById('toggle-cam');
 
-    <!-- Son d'arrivée -->
-    <audio id="join-sound" preload="auto">
-        <source src="data:audio/wav;base64,UklGRmQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YVQAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==" type="audio/wav">
-    </audio>
+const myName = prompt("Entrez votre nom ou surnom :") || "Anonyme";
+const ROOM_ID = "salle-unique-visio";
 
-    <!-- PeerJS -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-    <script src="script.js"></script>
+let myStream;
+let micEnabled = true, camEnabled = true;
+const peers = {};
+
+const peer = new Peer(undefined, {
+    host: '0.peerjs.com',
+    port: 443,
+    secure: true
+});
+
+const myContainer = createVideoElement(myName);
+const myVideo = myContainer.querySelector("video");
+myVideo.muted = true;
+
+navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+    myStream = stream;
+    addVideoStream(myContainer, myVideo, stream);
+    detectSpeaking(myContainer, stream);
+
+    peer.on('call', call => {
+        call.answer(stream);
+        const container = createVideoElement("Participant");
+        const video = container.querySelector("video");
+        call.on('stream', userStream => {
+            if (!peers[call.peer]) {
+                addVideoStream(container, video, userStream);
+                detectSpeaking(container, userStream);
+                joinSound.play();
+            }
+            peers[call.peer] = call;
+        });
+    });
+
+    peer.on('open', id => {
+        fetch(`https://0.peerjs.com/peers`).then(r => r.json()).then(ids => {
+            ids.forEach(otherId => {
+                if (otherId !== id) connectToNewUser(otherId, stream);
+            });
+        }).catch(() => {});
+    });
+});
+
+function connectToNewUser(userId, stream) {
+    const container = createVideoElement("Participant");
+    const video = container.querySelector("video");
+    const call = peer.call(userId, stream);
+    call.on('stream', userStream => {
+        if (!peers[userId]) {
+            addVideoStream(container, video, userStream);
+            detectSpeaking(container, userStream);
+            joinSound.play();
+        }
+        peers[userId] = call;
+    });
+}
+
+function createVideoElement(name) {
+    const container = document.createElement('div');
+    container.classList.add('video-container');
+    const video = document.createElement('video');
+    const label = document.createElement('div');
+    label.classList.add('name-label');
+    label.innerText = name;
+    container.appendChild(video);
+    container.appendChild(label);
+    return container;
+}
+
+function addVideoStream(container, video, stream) {
+    video.srcObject = stream;
+    video.addEventListener('loadedmetadata', () => video.play());
+    videoGrid.append(container);
+}
+
+function detectSpeaking(container, stream) {
+    const audioContext = new AudioContext();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    function check() {
+        analyser.getByteFrequencyData(dataArray);
+        const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        if (volume > 10) container.classList.add('speaking');
+        else container.classList.remove('speaking');
+        requestAnimationFrame(check);
+    }
+    check();
+}
+
+// Micro ON/OFF
+toggleMicBtn.addEventListener('click', () => {
+    micEnabled = !micEnabled;
+    myStream.getAudioTracks()[0].enabled = micEnabled;
+    toggleMicBtn.textContent = micEnabled ? "🎤 Micro OFF" : "🔇 Micro ON";
+});
+// Caméra ON/OFF
+toggleCamBtn.addEventListener('click', () => {
+    camEnabled = !camEnabled;
+    myStream.getVideoTracks()[0].enabled = camEnabled;
+    toggleCamBtn.textContent = camEnabled ? "📷 Caméra OFF" : "📷 Caméra ON";
+});
+</script>
 </body>
 </html>
